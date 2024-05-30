@@ -1,0 +1,120 @@
+setwd("C:/Peptide/anti-MRSA/pLM")
+load("C:/Peptide/anti-MRSA/pLM/MRSA_26032024.RData")
+
+
+library(farff)
+library(OpenML)
+library(dplyr)
+library(xgboost)
+library(ggplot2)
+library(SHAPforxgboost)
+library(caret)
+library(plsdepot)
+library(plyr)
+library(cvTools) 
+library(Metrics)
+library(MASS)
+library(kernlab)
+library(randomForest)
+library(mltools)
+library(AUC)
+library(ROCR)
+library(naivebayes)
+library(pROC)
+library(imbalance)
+library(smotefamily)
+library(recipes)
+library(FSelectorRcpp)
+library(protr)
+library(seqinr)
+library(bruceR)
+
+getROC_AUC = function(probs, true_Y){
+    probsSort = sort(probs, decreasing = TRUE, index.return = TRUE)
+    val = unlist(probsSort$x)
+    idx = unlist(probsSort$ix)  
+
+    roc_y = true_Y[idx];
+    stack_x = cumsum(roc_y == 2)/sum(roc_y == 2)
+    stack_y = cumsum(roc_y == 1)/sum(roc_y == 1)    
+
+    auc = sum((stack_x[2:length(roc_y)]-stack_x[1:length(roc_y)-1])*stack_y[2:length(roc_y)])
+    return(list(stack_x=stack_x, stack_y=stack_y, auc=auc))
+}
+###########################################################
+################################################################
+remove_empty <- function(dat, which = c("rows", "cols"), cutoff = 1, quiet = TRUE) {
+  if (missing(which) && !missing(dat)) {
+    message("value for \"which\" not specified, defaulting to c(\"rows\", \"cols\")")
+    which <- c("rows", "cols")
+  }
+  if ((sum(which %in% c("rows", "cols")) != length(which)) && !missing(dat)) {
+    stop("\"which\" must be one of \"rows\", \"cols\", or c(\"rows\", \"cols\")")
+  }
+  if (length(cutoff) != 1) {
+    stop("cutoff must be a single value")
+  } else if (!is.numeric(cutoff)) {
+    stop("cutoff must be numeric")
+  } else if (cutoff <= 0 | cutoff > 1) {
+    stop("cutoff must be >0 and <= 1")
+  } else if (length(which) > 1 & cutoff != 1) {
+    stop("cutoff must be used with only one of which = 'rows' or 'cols', not both")
+  }
+  if ("rows" %in% which) {
+    # Using different code with cutoff = 1 vs cutoff != 1 to avoid possible
+    # floating point errors.
+    mask_keep <-
+      if (cutoff == 1) {
+        rowSums(is.na(dat)) != ncol(dat)
+      } else {
+        (rowSums(!is.na(dat)) / ncol(dat)) > cutoff
+      }
+    if (!quiet) {
+      remove_message(dat = dat, mask_keep = mask_keep, which = "rows", reason = "empty")
+    }
+    dat <- dat[mask_keep, , drop = FALSE]
+  }
+  if ("cols" %in% which) {
+    # Using different code with cutoff = 1 vs cutoff != 1 to avoid possible
+    # floating point errors.
+    mask_keep <-
+      if (cutoff == 1) {
+        colSums(is.na(dat)) != nrow(dat)
+      } else {
+        (colSums(!is.na(dat)) / nrow(dat)) > cutoff
+      }
+    if (!quiet) {
+      remove_message(dat = dat, mask_keep = mask_keep, which = "columns", reason = "empty")
+    }
+    dat <- dat[, mask_keep, drop = FALSE]
+  }
+  dat
+}
+
+###########################################################
+customRF <- list(type = "Classification",
+                 library = "randomForest",
+                 loop = NULL)
+
+customRF$parameters <- data.frame(parameter = c("mtry", "ntree"),
+                                  class = rep("numeric", 2),
+                                  label = c("mtry", "ntree"))
+
+customRF$grid <- function(x, y, len = NULL, search = "grid") {}
+
+customRF$fit <- function(x, y, wts, param, lev, last, weights, classProbs) {
+  randomForest(x, y,
+               mtry = param$mtry,
+               ntree=param$ntree)
+}
+
+#Predict label
+customRF$predict <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+   predict(modelFit, newdata)
+
+#Predict prob
+customRF$prob <- function(modelFit, newdata, preProc = NULL, submodels = NULL)
+   predict(modelFit, newdata, type = "prob")
+
+customRF$sort <- function(x) x[order(x[,1]),]
+customRF$levels <- function(x) x$classes

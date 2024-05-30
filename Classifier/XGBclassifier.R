@@ -1,3 +1,7 @@
+GridXGB <- expand.grid(nrounds = c(20, 50, 100, 200, 300),
+                       max_depth = c(5, 7, 10, 15),
+                       eta = 0.1, gamma = 0, colsample_bytree = .7, min_child_weight = 3, subsample = 0.8)
+
 internal = read.csv("Dtr.csv", header = TRUE)
 external = read.csv("Dts.csv", header = TRUE)
 internal = internal[,-1]
